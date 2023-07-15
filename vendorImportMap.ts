@@ -61,6 +61,12 @@ function replaceInQuotes(input: string, target: string, replacement: string) {
 
 
 async function vendorModule(path: string, vendorPath: string) {
+  // if the path is already vendored, return
+  try {
+    await Deno.stat(urlToVendorPath(path, vendorPath))
+    return urlToVendorPath(path, vendorPath);
+  } catch {/* continue */}
+  console.log("Vendoring", path, "to", urlToVendorPath(path, vendorPath))
 	// get the module contents
   const module = await fetch(path, { headers });
   if (!module.ok) throw new Error(`Unable to fetch module ${path}`);
@@ -68,7 +74,6 @@ async function vendorModule(path: string, vendorPath: string) {
 
 	// parse the module for imports
   for await (const module of await parseImports(moduleText)) {
-		console.log(module.moduleSpecifier?.value)
 		// importedModulePath is the path of the imported module
     const importedModulePath = module.moduleSpecifier.value!;
     if (!importedModulePath) continue;
