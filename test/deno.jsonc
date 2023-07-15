@@ -1,0 +1,9 @@
+{
+  "tasks": {
+    "dev": "deno run -A --watch server.ts"
+  },
+  "lock": false,
+  "imports": {
+    "ultra": "../ultra.ts"
+  }
+}

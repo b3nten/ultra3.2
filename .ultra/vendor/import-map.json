@@ -1,0 +1,6 @@
+{
+  "imports": {
+    "react": "./.ultra/vendor/cdn.skypack.dev/react/index.js",
+    "react2": "./.ultra/vendor/esm.sh/react/index.js"
+  }
+}
