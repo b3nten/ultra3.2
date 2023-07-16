@@ -1,0 +1,9 @@
+{
+  "imports": {
+    "ultra": "../ultra.ts",
+    "lit": "./.ultra/vendor/esm.sh/lit/index.js",
+    "react": "./.ultra/vendor/esm.sh/react/index.js",
+    "react-dom/client": "./.ultra/vendor/esm.sh/react-dom/index.js",
+    "ultra/jsx-runtime": "./.ultra/vendor/esm.sh/react/jsx-runtime/index.js"
+  }
+}

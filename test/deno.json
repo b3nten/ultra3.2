@@ -5,6 +5,13 @@
   "lock": false,
   "imports": {
     "ultra": "../ultra.ts",
-    "lit": "https://esm.sh/lit"
+    "lit": "https://esm.sh/lit",
+    "react": "https://esm.sh/react",
+    "react-dom/client": "https://esm.sh/react-dom",
+    "ultra/jsx-runtime": "https://esm.sh/react/jsx-runtime"
+  },
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "ultra"
   }
 }

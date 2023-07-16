@@ -8,9 +8,11 @@ import { join } from "https://deno.land/std@0.193.0/path/win32.ts";
 interface SpecifierMap {
   [url: string]: string | null;
 }
+
 interface Scopes {
   [url: string]: SpecifierMap;
 }
+
 export interface ImportMap {
   imports?: SpecifierMap;
   scopes?: Scopes;
@@ -21,49 +23,70 @@ function isExternalUrl(path: string) {
   return path.startsWith("http://") || path.startsWith("https://");
 }
 
+/*
+./path/to/file
+/@compiler/path/to/file
+https://example.com/path/to/file
+/.ultra/vendor/path/to/file
+*/
+
 export default async function injectHtmlDeps(
   html: string,
   strategy: HtmlDependencyGraphAdaptor,
 ): Promise<string> {
-  const root = parse(html);
-  const scripts = root.querySelectorAll("script");
+  const htmlRoot = parse(html);
+  const scripts = htmlRoot.querySelectorAll("script");
   const dependencies = scripts.map((script) => script.attributes.src);
 
-  const allDeps: string[] = [];
+  const dependencyCollection: string[] = [];
 
   for await (let dependency of dependencies) {
     if (!dependency) continue;
     const resolved = await strategy.graph(dependency);
     for (const dep of resolved) {
-      allDeps.push(dep);
+      dependencyCollection.push(dep);
     }
   }
-  const tags: string[] = [];
-  for (const dep of allDeps) {
-    tags.push(`<link rel="modulepreload" href="${dep}">`);
+  const tagCollection: string[] = [];
+  for (const dep of dependencyCollection) {
+    tagCollection.push(`<link rel="modulepreload" href="${dep}">`);
   }
-  return html.replace("</head>", tags.join("\n") + "</head>");
+  return html.replace("</head>", tagCollection.join("\n") + "</head>");
 }
 
 interface HtmlDependencyGraphAdaptor {
   graph(path: string): Promise<string[]>;
 }
 
-export class DenoHtmlDependencyGraphAdaptor
+export class UltraHtmlDependencyInjectorStrategy
   implements HtmlDependencyGraphAdaptor {
   importMap: ImportMap;
-  constructor(importMap: ImportMap) {
+  deps: string[];
+  constructor(importMap: ImportMap, deps: string[] = []) {
     this.importMap = importMap;
+    this.deps = deps;
   }
+
   graph = async (path: string): Promise<string[]> => {
-    const resolvedPath = isExternalUrl(path)
-      ? path
-      : toFileUrl(join(Deno.cwd(), path)).toString();
+    let isExternal = false;
+    let isCompiled = false;
+
+    let resolvedPath = path;
+
+    if (isExternalUrl(path)) {
+      isExternal = true;
+    } else {
+      if (path.startsWith("/@compiler")) {
+        isCompiled = true;
+        resolvedPath = path.replace("/@compiler", "");
+      }
+      resolvedPath = toFileUrl(join(Deno.cwd(), resolvedPath)).toString();
+    }
+
     const graph = await denoGraph.createGraph(
       resolvedPath,
       {
         resolve: (specifier: string, referrer: string): string => {
-          if (isExternalUrl(specifier)) return specifier;
           if (
             this.importMap && this.importMap.imports &&
             this.importMap.imports[specifier]
@@ -76,14 +99,23 @@ export class DenoHtmlDependencyGraphAdaptor
         },
       },
     );
-    console.log({ graph });
-    const array = [];
+
+    const array = []
     for (const module of graph.modules) {
-      if (isExternalUrl(module.specifier)) {
+      if (isExternal) {
         array.push(module.specifier);
         continue;
       }
-      array.push(slash(fromFileUrl(module.specifier).replace(Deno.cwd(), "")));
+      let isVendored = slash(
+        fromFileUrl(module.specifier).replace(Deno.cwd(), ""),
+      ).startsWith("/.ultra/vendor");
+      let prefix = "";
+      if (isCompiled && !isVendored) {
+        prefix = "/@compiler";
+      }
+      array.push(
+        prefix + slash(fromFileUrl(module.specifier).replace(Deno.cwd(), "")),
+      );
     }
     return array;
   };

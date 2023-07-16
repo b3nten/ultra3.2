@@ -5,8 +5,9 @@ import Logger from "./log.ts";
 import * as util from "./util.ts";
 import vendorImportMap from "./vendorImportMap.ts";
 import injectHtmlDeps, {
-  DenoHtmlDependencyGraphAdaptor,
+  UltraHtmlDependencyInjectorStrategy,
 } from "./injectHtmlDeps.ts";
+import UltraPlugin from "./ultraPlugin.ts";
 
 type FetchFileResult = {
   path: string;
@@ -32,6 +33,8 @@ export default class Ultra {
 
   static log = new Logger("DEBUG");
 
+  #plugins: UltraPlugin[] = [];
+
   constructor({
     importMap,
   }: {
@@ -43,6 +46,10 @@ export default class Ultra {
     }
   }
 
+  public plugin(plugin: UltraPlugin) {
+    this.#plugins.push(plugin);
+  }
+
   public async build() {
     Ultra.log.info("Building Ultra...");
     if (this.importMap) {
@@ -52,6 +59,11 @@ export default class Ultra {
       );
     } else {
       Ultra.log.warning("No import map found.");
+    }
+    for (const plugin of this.#plugins) {
+      if (plugin.build) {
+        await plugin.build();
+      }
     }
     Ultra.log.success("Ultra built successfully!");
     this.built = true;
@@ -110,15 +122,14 @@ export default class Ultra {
 
   public serveCompiler() {
     this.hono.use(async (ctx, next) => {
-      // starts with '/🛠️/' :D
       if (
-        !new URL(ctx.req.url).pathname.startsWith(`/%F0%9F%9B%A0%EF%B8%8F/`)
+        !new URL(ctx.req.url).pathname.startsWith(`/@compiler/`)
       ) {
         await next();
         return;
       }
       // Path without the emoji
-      const path = slash(ctx.req.url.replace(`/%F0%9F%9B%A0%EF%B8%8F`, ""));
+      const path = slash(ctx.req.url.replace(`/@compiler`, ""));
       const file = await this.fetchFile(path);
       if (!file) {
         await next();
@@ -160,10 +171,11 @@ export default class Ultra {
     return importmap.injectIntoHtml(html, final);
   }
 
-  public async injectHtmlDeps(html: string) {
+  public async injectHtmlDeps(html: string, deps?: string[]) {
     if (!this.vendorImportMap && !this.importMap) return html;
-    const strategy = new DenoHtmlDependencyGraphAdaptor(
+    const strategy = new UltraHtmlDependencyInjectorStrategy(
       this.vendorImportMap! ?? this.importMap!,
+      deps,
     );
     return await injectHtmlDeps(html, strategy);
   }
