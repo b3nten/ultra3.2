@@ -4,6 +4,7 @@
   },
   "lock": false,
   "imports": {
-    "ultra": "../ultra.ts"
+    "ultra": "../ultra.ts",
+    "lit": "https://esm.sh/lit"
   }
 }

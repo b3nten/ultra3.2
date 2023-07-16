@@ -16,7 +16,7 @@ export function getImportMap(
 ): ImportMap | undefined {
   let importMapInternal: ImportMap | undefined;
   path && util.safe(() => {
-    importMapInternal = JSON.parse(Deno.readTextFileSync("./import_map.json"));
+    importMapInternal = JSON.parse(Deno.readTextFileSync(path));
   });
   !importMapInternal && util.safe(() => {
     importMapInternal = JSON.parse(Deno.readTextFileSync("./import_map.json"));
@@ -25,8 +25,8 @@ export function getImportMap(
     importMapInternal = JSON.parse(Deno.readTextFileSync("./importMap.json"));
   });
   !importMapInternal && util.safe(() => {
-    const config = Deno.readTextFileSync("./deno.json");
-    importMapInternal = JSON.parse(config).importMap;
+    const config = JSON.parse(Deno.readTextFileSync("./deno.json"));
+    importMapInternal = { imports: config.imports };
   });
   !importMapInternal && util.safe(() => {
     const config = JSON.parse(Deno.readTextFileSync("./deno.jsonc"));
@@ -37,11 +37,12 @@ export function getImportMap(
 
 export function addDependencies(
   importMap: ImportMap,
-  dependencies: SpecifierMap,
+  dependencies?: SpecifierMap,
 ): ImportMap {
   if (!importMap.imports) {
     importMap.imports = {};
   }
+  if(!dependencies) return importMap;
   for (const [key, value] of Object.entries(dependencies)) {
     importMap.imports[key] = value;
   }
@@ -49,14 +50,25 @@ export function addDependencies(
 }
 
 export function deleteDependencies(
-	importMap: ImportMap,
-	dependencies: string[],
+  importMap: ImportMap,
+  dependencies: string[],
 ): ImportMap {
-	if (!importMap.imports) {
-		return importMap;
-	}
-	for (const dependency of dependencies) {
-		delete importMap.imports[dependency];
-	}
-	return importMap;
+  if (!importMap.imports) {
+    return importMap;
+  }
+  for (const dependency of dependencies) {
+    delete importMap.imports[dependency];
+  }
+  return importMap;
+}
+
+export function injectIntoHtml(html: string, importMap?: ImportMap) {
+  if (!importMap) return html;
+  return html.replace(
+    "<head>",
+    `<head>
+		<script type="importmap">
+			${JSON.stringify(importMap)}
+		</script>`,
+  );
 }

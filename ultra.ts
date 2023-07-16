@@ -3,6 +3,10 @@ import { esbuild, getMimeType, Hono, slash } from "./deps.ts";
 import * as importmap from "./importmap.ts";
 import Logger from "./log.ts";
 import * as util from "./util.ts";
+import vendorImportMap from "./vendorImportMap.ts";
+import injectHtmlDeps, {
+  DenoHtmlDependencyGraphAdaptor,
+} from "./injectHtmlDeps.ts";
 
 type FetchFileResult = {
   path: string;
@@ -14,6 +18,9 @@ export default class Ultra {
   public hono = new Hono();
   public importMap?: importmap.ImportMap;
   public vendorImportMap?: importmap.ImportMap;
+
+  public built = false;
+  public ULTRA_MODE: "development" | "production" | "build" = "development";
 
   public get = this.hono.get.bind(this.hono);
   public post = this.hono.post.bind(this.hono);
@@ -31,6 +38,23 @@ export default class Ultra {
     importMap?: string;
   } = {}) {
     this.importMap = importmap.getImportMap(importMap);
+    if(this.importMap) {
+      Ultra.log.info("Import map found");
+    }
+  }
+
+  public async build() {
+    Ultra.log.info("Building Ultra...");
+    if (this.importMap) {
+      this.vendorImportMap = await vendorImportMap(
+        this.importMap,
+        "./.ultra/vendor",
+      );
+    } else {
+      Ultra.log.warning("No import map found.");
+    }
+    Ultra.log.success("Ultra built successfully!");
+    this.built = true;
   }
 
   public async fetchFile(url: string): Promise<FetchFileResult> {
@@ -124,7 +148,46 @@ export default class Ultra {
     });
   }
 
+  public injectImportMap(
+    html: string,
+    imports?: importmap.ImportMap["imports"],
+  ) {
+    if (!this.vendorImportMap && !this.importMap) return html;
+    const final = importmap.addDependencies(
+      this.vendorImportMap! ?? this.importMap!,
+      imports,
+    );
+    return importmap.injectIntoHtml(html, final);
+  }
+
+  public async injectHtmlDeps(html: string) {
+    if (!this.vendorImportMap && !this.importMap) return html;
+    const strategy = new DenoHtmlDependencyGraphAdaptor(
+      this.vendorImportMap! ?? this.importMap!,
+    );
+    return await injectHtmlDeps(html, strategy);
+  }
+
+  public async parseHtml() {
+    this.hono.use(async (ctx, next) => {
+      await next();
+      if (ctx.res.headers.get("content-type") !== "text/html") {
+        return;
+      }
+      let importMapInjected = importmap.injectIntoHtml(
+        await ctx.res.text(),
+        this.vendorImportMap ?? this.importMap,
+      );
+      ctx.res = new Response(importMapInjected, ctx.res);
+    });
+  }
+
   public start({ port }: { port?: number } = {}) {
+    if (!this.built && this.ULTRA_MODE === "development") {
+      Ultra.log.warning(
+        "Ultra did not run build step. Did you forget to call `await Ultra.build()`?",
+      );
+    }
     Ultra.log.success(`Ultra is running on http://localhost:${port ?? 8000}`);
     Deno.serve({ port: port ?? 8000, handler: this.hono.fetch });
   }
