@@ -19,9 +19,11 @@ const headers = new Headers({
 interface SpecifierMap {
   [url: string]: string | null;
 }
+
 interface Scopes {
   [url: string]: SpecifierMap;
 }
+
 interface ImportMap {
   imports?: SpecifierMap;
   scopes?: Scopes;
@@ -52,78 +54,79 @@ function ensureRelative(path: string) {
 function replaceInQuotes(input: string, target: string, replacement: string) {
   const doubleQuotesRegex = new RegExp(`"${target}"`);
   const singleQuotesRegex = new RegExp(`'${target}'`);
-
   let result = input.replace(doubleQuotesRegex, `"${replacement}"`);
   result = result.replace(singleQuotesRegex, `'${replacement}'`);
-
   return result;
 }
-
 
 async function vendorModule(path: string, vendorPath: string) {
   // if the path is already vendored, return
   try {
-    await Deno.stat(urlToVendorPath(path, vendorPath))
+    await Deno.stat(urlToVendorPath(path, vendorPath));
     return urlToVendorPath(path, vendorPath);
-  } catch {/* continue */}
-  console.log("Vendoring", path, "to", urlToVendorPath(path, vendorPath))
-	// get the module contents
+  } catch { /* continue */ }
+
+  console.log("Vendoring", path, "to", urlToVendorPath(path, vendorPath));
+
+  // get the module contents
   const module = await fetch(path, { headers });
   if (!module.ok) throw new Error(`Unable to fetch module ${path}`);
   let moduleText = await module.text();
 
-	// parse the module for imports
+  // parse the module for imports
   for await (const module of await parseImports(moduleText)) {
-		// importedModulePath is the path of the imported module
+    // importedModulePath is the path of the imported module
     const importedModulePath = module.moduleSpecifier.value!;
     if (!importedModulePath) continue;
-
+    // Path is external
     if (isExternalUrl(importedModulePath)) {
-      // if path is external
       const currentModuleVendorPath = urlToVendorPath(path, vendorPath);
-      const externalModuleVendorPath = urlToVendorPath(importedModulePath, vendorPath);
-
+      const externalModuleVendorPath = urlToVendorPath(
+        importedModulePath,
+        vendorPath,
+      );
       const relativePath = slash(
         relative(dirname(currentModuleVendorPath), externalModuleVendorPath),
       );
       moduleText = moduleText.replace(importedModulePath, relativePath);
-			// recursively vendor the external module
       await vendorModule(importedModulePath, vendorPath);
+      // Path is absolute
     } else if (importedModulePath.startsWith("/")) {
-      // if path is absolute
       const moduleUrl = new URL(path).origin + importedModulePath;
       const currentModuleVendorPath = urlToVendorPath(moduleUrl, vendorPath);
       const absoluteModuleVendorPath = urlToVendorPath(path, vendorPath);
-
       const relativePath = slash(
-        ensureRelative(relative(dirname(absoluteModuleVendorPath), currentModuleVendorPath)),
+        ensureRelative(
+          relative(dirname(absoluteModuleVendorPath), currentModuleVendorPath),
+        ),
       );
-      
-      moduleText = replaceInQuotes(moduleText, importedModulePath, relativePath);
-			// recursively vendor the module
+      moduleText = replaceInQuotes(
+        moduleText,
+        importedModulePath,
+        relativePath,
+      );
       await vendorModule(moduleUrl, vendorPath);
     }
   }
 
   let targetPath = urlToVendorPath(path, vendorPath);
-
   const folderPath = dirname(targetPath);
   await Deno.mkdir(folderPath, { recursive: true });
-
   const fileName = basename(targetPath);
   await Deno.writeTextFile(folderPath + "/" + fileName, moduleText);
-
   return targetPath;
 }
 
 export default async function vendorImportMap(
   importMap: ImportMap,
-	vendorPath: string,
+  vendorPath: string,
 ): Promise<ImportMap | undefined> {
   if (!importMap.imports) return;
-	if(!vendorPath) throw new Error("vendorPath is required");
+  if (!vendorPath) throw new Error("vendorPath is required");
+
   const newImportMap = importMap;
 
+  //TODO: make concurrent
   for await (const [module, specifier] of Object.entries(importMap.imports)) {
     if (!specifier) continue;
     if (isExternalUrl(specifier)) {
@@ -131,9 +134,10 @@ export default async function vendorImportMap(
       newImportMap.imports![module] = localPath;
     }
   }
+  // write the new import map to the vendor folder
   await Deno.writeTextFile(
     join(vendorPath, "import-map.json"),
     JSON.stringify(newImportMap, null, 2),
-  )
+  );
   return newImportMap;
 }

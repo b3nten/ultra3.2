@@ -23,6 +23,11 @@ function isExternalUrl(path: string) {
   return path.startsWith("http://") || path.startsWith("https://");
 }
 
+function isRelative(path: string) {
+  if (!path) return false;
+  return path.startsWith("./") || path.startsWith("../");
+}
+
 /*
 ./path/to/file
 /@compiler/path/to/file
@@ -70,9 +75,8 @@ export class UltraHtmlDependencyInjectorStrategy
   graph = async (path: string): Promise<string[]> => {
     let isExternal = false;
     let isCompiled = false;
-
     let resolvedPath = path;
-
+    
     if (isExternalUrl(path)) {
       isExternal = true;
     } else {
@@ -100,17 +104,15 @@ export class UltraHtmlDependencyInjectorStrategy
       },
     );
 
-    const array = []
+    const array = [];
     for (const module of graph.modules) {
+      console.log(module)
       if (isExternal) {
         array.push(module.specifier);
         continue;
       }
-      let isVendored = slash(
-        fromFileUrl(module.specifier).replace(Deno.cwd(), ""),
-      ).startsWith("/.ultra/vendor");
       let prefix = "";
-      if (isCompiled && !isVendored) {
+      if (isCompiled && isRelative(module.specifier)) {
         prefix = "/@compiler";
       }
       array.push(

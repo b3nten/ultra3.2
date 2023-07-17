@@ -20,7 +20,8 @@ export default class Ultra {
   public importMap?: importmap.ImportMap;
   public vendorImportMap?: importmap.ImportMap;
 
-  public built = false;
+  public hasBuilt = false;
+
   public ULTRA_MODE: "development" | "production" | "build" = "development";
 
   public get = this.hono.get.bind(this.hono);
@@ -41,7 +42,7 @@ export default class Ultra {
     importMap?: string;
   } = {}) {
     this.importMap = importmap.getImportMap(importMap);
-    if(this.importMap) {
+    if (this.importMap) {
       Ultra.log.info("Import map found");
     }
   }
@@ -52,6 +53,7 @@ export default class Ultra {
 
   public async build() {
     Ultra.log.info("Building Ultra...");
+
     if (this.importMap) {
       this.vendorImportMap = await vendorImportMap(
         this.importMap,
@@ -60,13 +62,16 @@ export default class Ultra {
     } else {
       Ultra.log.warning("No import map found.");
     }
+
     for (const plugin of this.#plugins) {
       if (plugin.build) {
-        await plugin.build();
+        await plugin.build(this);
       }
     }
+
     Ultra.log.success("Ultra built successfully!");
-    this.built = true;
+
+    this.hasBuilt = true;
   }
 
   public async fetchFile(url: string): Promise<FetchFileResult> {
@@ -82,6 +87,7 @@ export default class Ultra {
     // Todo: make this configurable
     // Todo: parse entry point module graph and allow all files in the graph
     const path = slash(resolvedURL.replace(Deno.cwd(), ""));
+
     const possibleDirectories = [
       "/public",
       "/client",
@@ -89,6 +95,7 @@ export default class Ultra {
       "./ultra/public",
       "./ultra/client",
     ];
+
     if (!possibleDirectories.some((directory) => path.startsWith(directory))) {
       return null;
     }
@@ -97,7 +104,9 @@ export default class Ultra {
     if (file instanceof Error) {
       return null;
     }
+
     const mimeType = getMimeType(resolvedURL) ?? "text/plain";
+    
     return {
       path,
       file,
@@ -195,7 +204,7 @@ export default class Ultra {
   }
 
   public start({ port }: { port?: number } = {}) {
-    if (!this.built && this.ULTRA_MODE === "development") {
+    if (!this.hasBuilt && this.ULTRA_MODE === "development") {
       Ultra.log.warning(
         "Ultra did not run build step. Did you forget to call `await Ultra.build()`?",
       );
